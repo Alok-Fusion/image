@@ -493,12 +493,6 @@ git add .
 git commit -m "Add AI Vision Hub documentation"
 ```
 
-If you want a cleaner history, commit logical changes separately:
-
-- backend model changes
-- frontend interaction changes
-- documentation changes
-
 ## Additional Documentation
 
 For a deeper text-based engineering document, see [PROJECT_DOCUMENTATION.txt](/c:/Users/ak500/OneDrive/Desktop/IT/image_hover/PROJECT_DOCUMENTATION.txt:1).
