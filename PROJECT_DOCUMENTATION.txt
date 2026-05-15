@@ -1,0 +1,439 @@
+AI VISION HUB
+PROJECT DOCUMENTATION
+
+1. PROJECT OVERVIEW
+
+AI Vision Hub is a local interactive AI application that combines image generation,
+object detection, structured metadata storage, and rich frontend visualization.
+
+The project has two main user journeys:
+
+- Generate an image locally from a text prompt
+- Upload an existing image and inspect its detected objects
+
+Each image is processed through an AI pipeline, stored in Supabase, and presented
+in a browser-based interface where users can hover individual detected objects to
+see focused visual and textual information.
+
+
+2. PRIMARY GOALS
+
+- Run image generation locally on CPU hardware
+- Detect many categories of objects inside generated or uploaded images
+- Save image files and structured detection metadata
+- Provide an interactive frontend with hover-aware overlays
+- Keep the project modular and maintainable
+- Support realistic local development on Windows with a Python virtual environment
+
+
+3. HIGH-LEVEL ARCHITECTURE
+
+The system is divided into four layers:
+
+1. Frontend interaction layer
+2. Backend orchestration layer
+3. AI inference layer
+4. Storage and persistence layer
+
+Frontend:
+- React
+- TypeScript
+- Tailwind CSS
+- Vite
+
+Backend:
+- FastAPI
+- Uvicorn
+- Supabase Python client
+
+AI layer:
+- Stable Diffusion v1.5 through diffusers
+- YOLOv8 through ultralytics
+- YOLOWorld for open-vocabulary detection
+
+Persistence:
+- Supabase Storage for image files
+- Supabase PostgreSQL for metadata
+
+
+4. DIRECTORY RESPONSIBILITIES
+
+Root files:
+- README.md
+  Repository guide for developers and reviewers
+- requirements.txt
+  Python backend dependencies
+- .env.example
+  Backend environment template
+- PROJECT_DOCUMENTATION.txt
+  Detailed plain text system documentation
+
+backend/:
+- main.py
+  FastAPI app, lifespan startup, route handlers
+- ai_engine.py
+  Singleton AI engine, generation and detection workflow
+- config.py
+  Configuration loading and settings model
+- database.py
+  Supabase wrapper and persistence operations
+- object_vocabulary.py
+  Built-in 600+ object label library for open-vocabulary passes
+- generated_images/
+  Local copies of generated images
+
+frontend/:
+- src/App.tsx
+  Main application state and orchestration
+- src/components/GenerationPanel.tsx
+  Prompt entry, object hints, upload and loading UI
+- src/components/ImageGallery.tsx
+  Stored image selection view
+- src/components/ImageStage.tsx
+  Hover-based detection stage and focused preview UI
+- src/lib/api.ts
+  Browser API client
+- src/lib/types.ts
+  Shared frontend type definitions
+
+supabase/:
+- schema.sql
+  SQL schema for metadata table creation
+
+
+5. BACKEND EXECUTION MODEL
+
+The backend uses a FastAPI lifespan handler so models and clients initialize when
+the application starts.
+
+Startup steps:
+- create local cache directories if missing
+- initialize Supabase client
+- load Stable Diffusion pipeline
+- load YOLO model
+- load YOLOWorld model
+
+The AI engine is implemented as a singleton so models are loaded only once per
+backend process.
+
+This is important because:
+- model loading is expensive
+- memory is limited on the target hardware
+- repeated reloads would slow down the application significantly
+
+
+6. IMAGE GENERATION PIPELINE
+
+Generation is handled in backend/ai_engine.py.
+
+Current model:
+- Stable Diffusion v1.5
+
+Important optimizations:
+- pipeline moved to CPU
+- attention slicing enabled
+- DPMSolverMultistepScheduler enabled
+- torch.no_grad() used during inference
+
+Generation flow:
+1. Accept prompt
+2. Run Stable Diffusion locally
+3. Convert output image to RGB
+4. Return the generated PIL image to the route layer
+
+The generated image is then:
+- detected
+- saved locally
+- uploaded to Supabase Storage
+- stored in PostgreSQL metadata
+
+
+7. DETECTION PIPELINE
+
+The detection pipeline is hybrid.
+
+Stage A:
+- standard YOLO closed-set detection
+
+Stage B:
+- YOLOWorld open-vocabulary detection
+
+YOLOWorld is not run with a single tiny list only. Instead, the project uses
+grouped label passes from backend/object_vocabulary.py.
+
+Current built-in open-vocabulary coverage:
+- 621 unique labels
+- 31 grouped label sets
+
+Why grouped passes are used:
+- better practical coverage than a tiny label list
+- more manageable inference behavior on CPU
+- easier to extend by editing vocabulary groups
+
+Detection result structure includes:
+- label
+- confidence
+- bounding box coordinates
+- detector source
+
+The backend merges overlapping results and attempts to remove near-duplicates.
+
+
+8. SUPABASE INTEGRATION
+
+The project depends on two Supabase services:
+
+A. Storage
+- bucket name: images
+- stores uploaded and generated image files
+
+B. PostgreSQL metadata
+- table name: images_metadata
+- columns:
+  - id
+  - url
+  - detections
+
+The detections field stores structured JSON including:
+- original image dimensions
+- detection items
+- label list used
+- source metadata such as upload or generated
+
+
+9. FRONTEND INTERACTION MODEL
+
+The frontend is responsible for:
+- submitting prompts
+- uploading images
+- listing saved records
+- selecting an image
+- rendering scaled bounding boxes
+- handling hover interactions
+
+ImageStage is the most important frontend visualization component.
+
+Current hover behavior:
+- hovering an object focuses that region
+- non-hovered areas are dimmed
+- the active object is highlighted
+- a small info card is shown
+- a contextual crop preview is shown
+
+This gives the user a more guided inspection experience than showing every box
+equally at all times.
+
+
+10. SCALING AND OVERLAY LOGIC
+
+The app stores detections in original image coordinates.
+
+The frontend computes:
+
+scaleX = displayedWidth / originalWidth
+scaleY = displayedHeight / originalHeight
+
+Then converts:
+- x
+- y
+- width
+- height
+
+from original pixel space into displayed browser space.
+
+This prevents mismatched boxes when the browser resizes the image.
+
+
+11. API ENDPOINTS
+
+GET /health
+- returns a simple health response
+
+GET /images
+- returns stored image metadata records from Supabase
+
+POST /generate
+- accepts prompt and optional candidate labels
+- generates an image
+- detects objects
+- uploads image
+- stores metadata
+- returns the saved record
+
+POST /upload
+- accepts an image file and optional candidate labels
+- detects objects
+- uploads file
+- stores metadata
+- returns the saved record
+
+
+12. ENVIRONMENT DESIGN
+
+Backend env loading:
+- root .env
+- backend/.env
+
+Frontend env loading:
+- frontend/.env
+
+Important backend variables:
+- SUPABASE_URL
+- SUPABASE_SERVICE_KEY
+- SUPABASE_BUCKET
+- SD_MODEL_ID
+- YOLO_MODEL_PATH
+- YOLO_WORLD_MODEL_PATH
+- DIFFUSION_STEPS
+- GUIDANCE_SCALE
+- DETECTION_CONFIDENCE
+- WORLD_DETECTION_CONFIDENCE
+- WORLD_CANDIDATE_LABELS
+
+Important frontend variable:
+- VITE_API_URL
+
+
+13. LOCAL CACHING STRATEGY
+
+The project uses local cache directories under .cache/ for:
+- Hugging Face assets
+- Transformers assets
+- Ultralytics settings and cache
+
+Reason:
+- keep the project self-contained
+- avoid profile-wide permission problems
+- improve repeat startup speed
+
+
+14. TARGET HARDWARE CONSIDERATIONS
+
+Target environment:
+- i5 10th Gen
+- 16 GB RAM
+- CPU-first execution
+
+Practical implications:
+- Stable Diffusion generation is slow compared to GPU setups
+- detection speed depends on vocabulary breadth
+- very broad YOLOWorld search increases latency
+- some heavy models are intentionally avoided to keep the system usable
+
+
+15. STRENGTHS OF THE CURRENT DESIGN
+
+- modular backend
+- clear separation of configuration, inference, and storage
+- local-first workflow
+- rich frontend visualization
+- extensible object vocabulary
+- practical support for both closed-set and open-vocabulary detection
+
+
+16. CURRENT LIMITATIONS
+
+- no perfect universal object detector
+- very broad object search increases CPU time
+- false positives may rise as vocabulary grows
+- previously stored records are not automatically reprocessed
+- high-accuracy open-vocabulary alternatives may be too slow for the current hardware
+
+
+17. RECOMMENDED OPERATIONAL WORKFLOW
+
+Setup:
+1. Create .venv
+2. Install Python requirements
+3. Install frontend packages
+4. Configure Supabase
+5. Fill backend and frontend env files
+
+Run:
+1. Start backend
+2. Start frontend
+3. Open browser
+4. Generate or upload image
+5. Hover objects to inspect results
+
+When model behavior changes:
+1. Restart backend
+2. Re-upload the image or regenerate a new one
+3. Review the updated detections
+
+
+18. TROUBLESHOOTING GUIDE
+
+Issue: Backend starts but generation fails
+Possible causes:
+- invalid Supabase credentials
+- model download not completed
+- insufficient memory
+- wrong env file location
+
+Issue: Only a few objects are detected
+Possible causes:
+- low image quality
+- small objects
+- object not well represented visually
+- threshold too high
+
+Possible fixes:
+- lower WORLD_DETECTION_CONFIDENCE
+- add candidate labels
+- upload a clearer image
+- crop the image to the important scene
+
+Issue: Hover UI does not match image correctly
+Possible causes:
+- stale frontend build
+- browser not refreshed
+- image dimensions not updated
+
+Issue: New detection logic does not affect old images
+Explanation:
+- detections are stored in the database at processing time
+- old records must be reprocessed by uploading again
+
+
+19. FUTURE IMPROVEMENT IDEAS
+
+- scene presets such as office, bedroom, kitchen, street
+- optional high-accuracy detection mode for uploads only
+- background reprocessing job for old records
+- detection filtering and search in the frontend
+- separate crop gallery for detected objects
+- exportable detection JSON
+- object count analytics
+- segmentation support instead of boxes only
+
+
+20. MAINTENANCE NOTES
+
+When editing the object vocabulary:
+- keep related objects grouped together
+- avoid adding near-duplicate labels excessively
+- remember that more labels mean more CPU work
+
+When changing model thresholds:
+- verify precision and recall tradeoffs
+- test on both indoor and outdoor scenes
+
+When changing frontend hover behavior:
+- test on desktop and smaller screens
+- verify tooltip placement near edges
+- confirm crop preview still aligns with the image
+
+
+21. SUMMARY
+
+AI Vision Hub is a modular local AI system that combines:
+- local image generation
+- broad object detection
+- Supabase-backed persistence
+- interactive frontend inspection
+
+It is optimized for practical local experimentation rather than enterprise-scale
+deployment, and it now includes a 600+ label open-vocabulary object search layer
+to improve real-world scene understanding.
+

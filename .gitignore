@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.env
+backend/generated_images/*
+!backend/generated_images/.gitkeep
+frontend/node_modules/
+frontend/dist/
+
